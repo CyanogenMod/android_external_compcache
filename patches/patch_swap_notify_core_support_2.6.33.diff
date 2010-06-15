@@ -1,13 +1,17 @@
+ include/linux/blkdev.h |    2 ++
+ mm/swapfile.c          |    3 +++
+ 2 files changed, 5 insertions(+), 0 deletions(-)
+
 diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
-index 5c80189..2232051 100644
+index 5c80189..af027de 100644
 --- a/include/linux/blkdev.h
 +++ b/include/linux/blkdev.h
 @@ -1301,6 +1301,8 @@ struct block_device_operations {
  						unsigned long long);
  	int (*revalidate_disk) (struct gendisk *);
  	int (*getgeo)(struct block_device *, struct hd_geometry *);
-+        /* this callback is with swap_lock and sometimes page table lock held */
-+        void (*swap_slot_free_notify) (struct block_device *, unsigned long);
++	/* this callback is with swap_lock and sometimes page table lock held */
++	void (*swap_slot_free_notify) (struct block_device *, unsigned long);
  	struct module *owner;
  };
  
