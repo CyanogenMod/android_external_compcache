@@ -45,6 +45,8 @@ static int verbose_flag;
 } while (0)
 
 struct rzs_args {
+	char backing_swap[MAX_SWAP_NAME_LEN];
+	u64 memlimit_kb;
 	u64 disksize_kb;
 	int init;
 	int reset;
@@ -60,12 +62,21 @@ void usage(void)
 
 void show_stats(struct ramzswap_ioctl_stats *s)
 {
+	int backing_swap_present = (s->backing_swap_name[0] != '\0');
+
+	if (backing_swap_present)
+		printf("BackingSwap:	%s\n", s->backing_swap_name);
+
 #define K(x)	((x) >> 10)
 	/* Basic stats */
 	printf(
 		"DiskSize:	%8" PRIu64 " kB\n",
 		K(s->disksize)
 	);
+
+	/* memlimit is valid only if backing swap is present */
+	if (backing_swap_present)
+		printf("MemLimit:	%8" PRIu64 " kB\n", K(s->memlimit));
 
 	/* Extended stats */
 	printf(
@@ -98,6 +109,15 @@ void show_stats(struct ramzswap_ioctl_stats *s)
 		K(s->compr_data_size),
 		K(s->mem_used_total)
 	);
+
+	if (backing_swap_present) {
+		printf(
+			"BDevNumReads:	%8" PRIu64 "\n"
+			"BDevNumWrites:	%8" PRIu64 "\n",
+			s->bdev_num_reads,
+			s->bdev_num_writes
+		);
+	}
 }
 
 int do_ioctl(int fd, int argc, struct rzs_args *args)
@@ -115,6 +135,20 @@ int do_ioctl(int fd, int argc, struct rzs_args *args)
 } while (0)
 
 	while (argc--) {
+
+	if (args->backing_swap[0] != '\0') {
+		VERBOSE("backing_swap: %s\n", args->backing_swap);
+		ret = ioctl(fd, RZSIO_SET_BACKING_SWAP, args->backing_swap);
+		args->backing_swap[0] = '\0';
+		ON_ERR("backing_swap");
+	}
+
+	if (args->memlimit_kb) {
+		VERBOSE("memlimit_kb: %" PRIu64 "\n", args->memlimit_kb);
+		ret = ioctl(fd, RZSIO_SET_MEMLIMIT_KB, &args->memlimit_kb);
+		args->memlimit_kb = 0;
+		ON_ERR("memlimit_kb");
+	}
 
 	if (args->disksize_kb) {
 		VERBOSE("disksize_kb: %" PRIu64 "\n", args->disksize_kb);
@@ -180,6 +214,8 @@ int main(int argc, char *argv[])
 		char *endptr = NULL;
 
 		static struct option long_options[] = {
+			{ "backing_swap", required_argument, 0, 'b' },
+			{ "memlimit_kb", required_argument, 0, 'm' },
 			{ "disksize_kb", required_argument, 0, 'd' },
 			{ "init", no_argument, 0, 'i' },
 			{ "reset", no_argument, 0, 'r' },
@@ -195,6 +231,21 @@ int main(int argc, char *argv[])
 			break;
 		
 		switch (opt) {
+		case 'b':
+			strncpy(args.backing_swap, optarg, MAX_SWAP_NAME_LEN - 1);
+			args.backing_swap[MAX_SWAP_NAME_LEN - 1] = '\0';
+			break;
+
+		case 'm':
+			if (strnlen(optarg, MAX_SIZE_LEN + 1) > MAX_SIZE_LEN) {
+				printf("memlimit_kb: %s\n", strerror(EOVERFLOW));
+				ret = -EOVERFLOW;
+				goto out;
+			}
+
+			args.memlimit_kb = strtoul(optarg, &endptr, 10);
+			break;
+
 		case 'd':
 			if (strnlen(optarg, MAX_SIZE_LEN + 1) > MAX_SIZE_LEN) {
 				printf("disksize_kb: %s\n", strerror(EOVERFLOW));
